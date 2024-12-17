@@ -272,16 +272,18 @@ pub(crate) fn reviews_for_fsrs(
         if entry.review_kind == RevlogReviewKind::Filtered && entry.ease_factor == 0 {
             continue;
         }
-        let within_cutoff = entry.id.0 > ignore_revlogs_before.0;
+        let within_cutoff = entry.id.0 >= ignore_revlogs_before.0;
         let user_graded = matches!(entry.button_chosen, 1..=4);
         if user_graded && within_cutoff {
             first_user_grade_idx = Some(index);
+            if entry.review_kind == RevlogReviewKind::Learning {
+                first_of_last_learn_entries = Some(index);
+                revlogs_complete = true;
+                continue;
+            }
         }
 
-        if user_graded && entry.review_kind == RevlogReviewKind::Learning {
-            first_of_last_learn_entries = Some(index);
-            revlogs_complete = true;
-        } else if first_of_last_learn_entries.is_some() {
+        if first_of_last_learn_entries.is_some() {
             break;
         } else if matches!(
             (entry.review_kind, entry.ease_factor),
@@ -304,31 +306,15 @@ pub(crate) fn reviews_for_fsrs(
             }
         }
     }
-    if training {
-        // While training, ignore the entire card if the first learning step of the last
-        // group of learning steps is before the ignore_revlogs_before date
-        if let Some(idx) = first_of_last_learn_entries {
-            if entries[idx].id.0 < ignore_revlogs_before.0 {
-                return None;
-            }
-        }
-    } else {
-        // While reviewing, if the first learning step is before the ignore date,
-        // we won't start from the learning step.
-        if let Some(idx) = first_of_last_learn_entries {
-            if entries[idx].id.0 < ignore_revlogs_before.0 && idx < entries.len() - 1 {
-                revlogs_complete = false;
-                first_of_last_learn_entries = None;
-            }
-        }
-    }
+
+    // After iterating over the reviews, if we found a learning step...
     if let Some(idx) = first_of_last_learn_entries {
-        // start from the learning step
+        // ...start from it
         if idx > 0 {
             entries.drain(..idx);
         }
     } else if training {
-        // when training, we ignore cards that don't have any learning steps
+        // When training, we ignore cards that don't have any learning steps.
         return None;
     } else if let Some(idx) = first_user_grade_idx {
         // if there are no learning entries, but the user has reviewed the card,
